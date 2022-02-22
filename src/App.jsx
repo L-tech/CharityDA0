@@ -1,20 +1,78 @@
 import { useEffect, useMemo, useState } from "react";
 import { ThirdwebSDK } from "@3rdweb/sdk";
+import { ethers } from "ethers";
 // import thirdweb
 import { useWeb3 } from "@3rdweb/hooks";
 const sdk = new ThirdwebSDK("rinkeby");
 const bundleDropModule = sdk.getBundleDropModule(
   "0x9238DE7c4afF231DA301062c5A89D9bDF430109B",
 );
+const tokenModule = sdk.getTokenModule(
+  "0x7c8d0def399CA9264c8D6B9c7EE1F8C955e1B836"
+);
 const App = () => {
-  // Use the connectWallet hook thirdweb gives us.
   const { connectWallet, address, error, provider } = useWeb3();
   console.log("👋 Address:", address);
   const signer = provider ? provider.getSigner() : undefined;
 
   const [hasClaimedNFT, setHasClaimedNFT] = useState(false);
-  // isClaiming lets us easily keep a loading state while the NFT is minting.
+  // isClaiming easily keep a loading state while the NFT is minting.
   const [isClaiming, setIsClaiming] = useState(false);
+
+  const [memberTokenAmounts, setMemberTokenAmounts] = useState({});
+  // The array holding all of the members addresses.
+  const [memberAddresses, setMemberAddresses] = useState([]);
+
+  // A fancy function to shorten someones wallet address, no need to show the whole thing. 
+  const shortenAddress = (str) => {
+    return str.substring(0, 6) + "..." + str.substring(str.length - 4);
+  };
+
+  // This useEffect grabs all the addresses of our members holding our NFT.
+  useEffect(async () => {
+    if (!hasClaimedNFT) {
+      return;
+    }
+    
+    try {
+      const memberAddresses = await bundleDropModule.getAllClaimerAddresses("0");
+      setMemberAddresses(memberAddresses);
+      console.log("🚀 Members addresses", memberAddresses);
+    } catch (error) {
+      console.error("failed to get member list", error);
+    }
+  }, [hasClaimedNFT]);
+
+  // This useEffect grabs the # of token each member holds.
+  useEffect(async () => {
+    if (!hasClaimedNFT) {
+      return;
+    }
+
+    // Grab all the balances.
+    try {
+      const amounts = await tokenModule.getAllHolderBalances();
+      setMemberTokenAmounts(amounts);
+      console.log("👜 Amounts", amounts);
+    } catch (error) {
+      console.error("failed to get token amounts", error);
+    }
+  }, [hasClaimedNFT]);
+
+  // Now, we combine the memberAddresses and memberTokenAmounts into a single array
+  const memberList = useMemo(() => {
+    return memberAddresses.map((address) => {
+      return {
+        address,
+        tokenAmount: ethers.utils.formatUnits(
+          // If the address isn't in memberTokenAmounts, it means they don't
+          // hold any of our token.
+          memberTokenAmounts[address] || 0,
+          18,
+        ),
+      };
+    });
+}, [memberAddresses, memberTokenAmounts]);
 
   // Another useEffect!
   useEffect(() => {
@@ -59,8 +117,31 @@ const App = () => {
   if (hasClaimedNFT) {
     return (
       <div className="member-page">
-        <h1>🍪CharityDAO Member Page</h1>
+        <h1>🍪DAO Member Page</h1>
         <p>Congratulations on being a member</p>
+        <div>
+          <div>
+            <h2>Member List</h2>
+            <table className="card">
+              <thead>
+                <tr>
+                  <th>Address</th>
+                  <th>Token Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {memberList.map((member) => {
+                  return (
+                    <tr key={member.address}>
+                      <td>{shortenAddress(member.address)}</td>
+                      <td>{member.tokenAmount}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
     );
   };
